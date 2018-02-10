@@ -1,6 +1,6 @@
 {
   "name": "ga-tsp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Algoritmo genético con un cross-over personalizado",
   "main": "index.js",
   "scripts": {
