@@ -1,60 +1,91 @@
 
+const {toMili,toMinutes,getRandomPositions} = require("./utilities");
+
 //------VARIABLES---------
-global.distanceMatrix=[];
-global.population=[];
-global.bestIndividual;
+let timeMatrix=[];
+let population=[];
+let bestIndividual = {};
+let date;
+let pois;
+let lunch_start;
+let lunch_end;
 
 
-function getDistance(point1,point2) {
-    var R = 6371000; // Radius of the earth in m
-    var dLat = deg2rad(point2.lat-point1.lat);  // deg2rad below
-    var dLon = deg2rad(point2.lng-point1.lng);
-    var a =
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(deg2rad(point1.lat)) * Math.cos(deg2rad(point2.lat)) *
-        Math.sin(dLon/2) * Math.sin(dLon/2)
-    ;
-    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return  parseFloat((R * c).toFixed(2)); // Distance in km
-}
 
-function deg2rad(deg) { return deg * (Math.PI/180); }
-
-function getRandomPositions(total,start,limit){//get random positions of any array
-    if (total===2){return [0,1]};
-    var random = new Array(total);
-    var i = 0;
-    while(i<random.length){
-        num = Math.floor(Math.random()*limit+start);
-        if (!random.includes(num)){
-            random[i]=num;
-            i++;
-        }
-    }
-    return random;
-}
 
 function getFitness(individual){ //calculate fitness value of any individual
-    var total = distanceMatrix[individual.length-1][0];
-    for(var i=0;i<individual.length-1;i++){
-        total+=distanceMatrix[individual[i]][individual[i+1]];
+    var duration = timeMatrix[0][individual[1]].duration;
+    var total = duration + pois[individual[individual.length-1]].expected_time;
+    var hours = new Date(date);
+
+    for(var i=1;i<individual.length-1;i++){
+        duration = timeMatrix[individual[i]][individual[i+1]].duration;
+        let expected_time = parseFloat(pois[individual[i]].expected_time);
+        //get penalties
+        let penalties = getPenalties(hours,pois[individual[i]]);
+        setTime(hours,expected_time);
+        //add time duration to arrive to the next poi
+        setTime(hours,duration);
+
+        //lunch time invaded
+        if(hours.getTime() >= lunch_start && hours.getTime() < lunch_end){
+            setTime(hours,60);
+            total+=toMinutes(lunch_end-hours.getTime());
+        }
+
+        //add total
+        total+= expected_time+duration+penalties;
     }
-    return parseFloat(total.toFixed(2));
+
+    return 480 - total;
+
+    function setTime(date,duration){
+        date.setTime(date.getTime()+toMili(duration));
+    }
+
+    function getPenalties(date,poi) {
+        const time = date.getTime();
+        var open;
+        var close;
+        try{
+            //open
+            open = poi.opening_hours.periods[date.getDay()].open.split('');
+            open = new Date(`${date.toDateString().split(' ').splice(1,3).join(' ')} ${open[0]}${open[1]}:${open[2]}${open[3]}:00`);
+            open = open.getTime();
+            //close
+            close = poi.opening_hours.periods[date.getDay()].close.split('');
+            close = new Date(date.toDateString().split(' ').splice(1,3).join(' ')+` ${close[0]}${close[1]}:${close[2]}${close[3]}:00`);
+            close = close.getTime();
+        }catch(err) {
+            //open
+            open = new Date(`${date.toDateString().split(' ').splice(1,3).join(' ')} 10:00:00`);
+            open = open.getTime();
+            //close
+            close = new Date(`${date.toDateString().split(' ').splice(1,3).join(' ')} 17:00:00`);
+            close = close.getTime();
+        }
+        if(!(time >= open && time < close)){
+            return time < open ? toMinutes(open - time) : toMinutes(time - close);
+        }
+        return 0;
+    }
 }
+
 
 function sort() {//sort population according to Fitness value of individuals
     population.sort(function(a, b) {
-        return b.fitness - a.fitness;
+        return a.fitness - b.fitness;
     });
     var best = population[population.length-1];
     // bestIndividual =  best.fitness < bestIndividual.fitness ? best : bestIndividual;
-    if(best.fitness < bestIndividual.fitness){
+    if(best.fitness > bestIndividual.fitness){
         bestIndividual = best;
     }
 }
 
-function initPopulation(totalCities,size) {
-    var total = totalCities-1;
+function initPopulation(totalPOIS,size) {
+    population=[];
+    var total = totalPOIS-1;
     for(var i=0;i<size;i++){
         var route = [0].concat(getRandomPositions(total,1,total));
         population[i] = {
@@ -65,10 +96,10 @@ function initPopulation(totalCities,size) {
 }
 
 function selection(parentsSize) { //select individuals to crossover
-    others=~~(parentsSize/3);
-    best=parentsSize-others;
-    start=Math.floor(Math.random()*(population.length-(best+others)));
-    randomIndividuals=population.slice(start,start+others);
+    const others=~~(parentsSize/5);
+    const best=parentsSize-others;
+    const start=Math.floor(Math.random()*(population.length-(best+others)));
+    const randomIndividuals=population.slice(start,start+others);
     return randomIndividuals.concat(population.slice(population.length-(best+1),population.length-1));
     // return population.slice(population.length-(parentsSize+1),population.length-1);
 }
@@ -78,7 +109,7 @@ function crossoverAllParents(parents) {
     var usedParents=[];
     var total=parents.length;
     while(usedParents.length!==total){
-        var positions = getRandomPositions(2,0,parents.length-1); //random positions
+        var positions = parents.length === 2 ? [0,1] : getRandomPositions(2,0,parents.length-1); //random positions
         var parent1 = parents[positions[0]], parent2 = parents[positions[1]];
         usedParents.push(parent1);
         usedParents.push(parent2);
@@ -102,29 +133,26 @@ function crossoverAllParents(parents) {
     population = newPopulation.concat(usedParents);
 
     function crossover(parent1,parent2){
-        values = getPositionsAndMaps();
-        even = values[0];
-        odd = values[1];
+        [even, odd] = getPositionsAndMaps();
         return crossoverPoints(even).concat(crossoverPoints(odd));
 
         function crossoverPoints(parameters) {
-            positions=parameters[0];
-            maps=parameters[1];
-            childs=[[0],[0]];
+            [positions,maps]=parameters;
+            let childs=[[0],[0]];
             for(var i =1;i<parent1.length;i++){
                 if(positions.includes(i)){
                     childs[0][i]=parent1[i];
                     childs[1][i]=parent2[i];
                 }else{
-                    childs[0][i]= maps[0][parent2[i]] != undefined ? maps[0][parent2[i]] : parent2[i];
-                    childs[1][i]= maps[1][parent1[i]] != undefined ? maps[1][parent1[i]] : parent1[i];
+                    childs[0][i]= maps[0][parent2[i]] !== undefined ? maps[0][parent2[i]] : parent2[i];
+                    childs[1][i]= maps[1][parent1[i]] !== undefined ? maps[1][parent1[i]] : parent1[i];
                 }
             }
             return childs;
         }
         function getPositionsAndMaps(){ //return the positions of chromosomes and points to be mapped
-            evenPositions=[],oddPositions=[];
-            evenPoints=[[],[]],oddPoints=[[],[]];
+            const evenPositions=[],oddPositions=[];
+            const evenPoints=[[],[]],oddPoints=[[],[]];
             for(var i=1;i<=parent1.length-1;i+=2){
                 //even
                 evenPoints[0].push(parent1[i]);
@@ -136,7 +164,7 @@ function crossoverAllParents(parents) {
                 oddPositions.push(i+1);
             }
             var last=oddPoints[0].length-1;
-            if(oddPoints[0][last]==undefined){
+            if(oddPoints[0][last]===undefined){
                 oddPoints[0].splice(last,1);
                 oddPoints[1].splice(last,1);
                 oddPositions.splice(last,1);
@@ -144,18 +172,17 @@ function crossoverAllParents(parents) {
             return [[evenPositions,getMaps(evenPoints)],[oddPositions,getMaps(oddPoints)]];
         }
         function getMaps(points){ //return the points to be mapped
-            ar1=points[0];
-            ar2=points[1];
+            [ar1,ar2]=points;
             for(var i=0;i<ar1.length;++i){
-                index=ar2.indexOf(ar1[i]);
-                if(index!=-1){
+                const index=ar2.indexOf(ar1[i]);
+                if(index!==-1){
                     ar2[index]=ar2[i];
                     ar1.splice(i,1);
                     ar2.splice(i,1);
                     i--;
                 }
             }
-            m1={},m2={};
+            const m1={},m2={};
             for(i in ar1){
                 m1[ar1[i]]=ar2[i];
                 m2[ar2[i]]=ar1[i];
@@ -184,9 +211,9 @@ function mutation(mutation_probability) {
     });
 }
 
-function initBestIndividual(totalCities) {
+function initBestIndividual(totalPOIS) {
     var route=[];
-    for(var i=0; i < totalCities; i++){
+    for(var i=0; i < totalPOIS; i++){
         route.push(i);
     }
     bestIndividual = {
@@ -200,35 +227,79 @@ module.exports = {
         const crossover_probability = 1/3;
         var total = Math.ceil(parameters.sizePopulation*crossover_probability);
         var parentsSize = total % 2 === 0 ? total : total+1;
-        distanceMatrix = parameters.distanceMatrix;
+        timeMatrix = parameters.timeMatrix;
+        date = parameters.date;
+        lunch_start = date.getTime()+(3*3600*1000);
+        lunch_end = lunch_start+(3600*1000);
 
+        pois = parameters.pois;
         //---EVOLVE---
-        initBestIndividual(parameters.totalCities);
-        initPopulation(parameters.totalCities,parameters.sizePopulation);
+        initBestIndividual(pois.length);
+        initPopulation(pois.length,parameters.sizePopulation);
         sort();
         for(var i=0;i<parameters.totalGenerations;i++){
             crossoverAllParents(selection(parentsSize));
             mutation(parameters.mutation_rate);
             sort();
         }
-        return bestIndividual;
-    },
-    getDistanceMatrix: function (points) {
-        var distanceMatrix=[];
-        for(i in points){
-            distanceMatrix[i] = new Array(points.length);
+
+        return getSchedule(bestIndividual.route);
+    }
+};
+
+
+
+function getSchedule(individual){
+    var duration = timeMatrix[0][individual[1]].duration;
+    var schedule = [];
+    var hours = new Date(date);
+
+    var time_ini = new Date(date);
+    time_ini.setTime(date.getTime()-(duration*60*1000));
+
+    //location User
+    schedule.push({poi:pois[0]});
+    //---ROUTE TO FIRST POI---
+    schedule.push({
+        route:timeMatrix[0][individual[1]].points,
+        departure: time_ini.toTimeString().split(' ')[0],
+        arrival: date.toTimeString().split(' ')[0]
+    });
+
+    for(var i=1;i<individual.length-1;i++){
+        duration = timeMatrix[individual[i]][individual[i+1]].duration;
+        const expected_time = parseFloat(pois[individual[i]].expected_time);
+
+        //visit time to POI
+        const visit_time = {poi:pois[individual[i]]}
+
+        //route to next POI
+        const next = {route:timeMatrix[individual[i]][individual[i+1]].points}
+
+        //POI expected visit time
+        setTime(hours,expected_time,visit_time);
+        schedule.push(visit_time);
+
+        //time to travel to de next POI
+        setTime(hours,duration,next);
+        schedule.push(next);
+
+        //lunch time
+        if(hours.getTime() >= lunch_start && hours.getTime() < lunch_end){
+            const lunch_time = {lunch:true,location:pois[individual[i+1]].location};
+            setTime(hours,60,lunch_time);
+            schedule.push(lunch_time);
         }
-        for(var i=0;i<points.length-1;i++){
-            for(var j=i;j<points.length;j++){
-                if(i==j){
-                    distanceMatrix[i][j] = 0.00;
-                }else{
-                    distanceMatrix[i][j] = getDistance(points[i],points[j]);
-                    distanceMatrix[j][i] = distanceMatrix[i][j];
-                }
-            }
-        }
-        return distanceMatrix;
+    }
+    const last={poi:pois[individual[individual.length-1]]};
+    setTime(hours,pois[individual[individual.length-1]].expected_time,last);
+    schedule.push(last);
+
+    return schedule;
+
+    function setTime(date,duration,obj){
+        obj.start=date.toTimeString().split(":", 2).join(':');
+        date.setTime(date.getTime()+(duration*60*1000));
+        obj.end=date.toTimeString().split(":", 2).join(':');
     }
 }
-
