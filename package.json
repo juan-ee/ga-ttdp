@@ -18,7 +18,8 @@
   "homepage": "https://github.com/vengatus/ga-tsp#readme",
   "devDependencies": {
     "chai": "4.2.0",
-    "mocha": "5.2.0"
+    "mocha": "5.2.0",
+    "prettier": "1.15.3"
   },
   "dependencies": {
     "shuffle-array": "^1.0.1"

@@ -1,4 +1,4 @@
-const { toMili, toMinutes, getRandomPositions } = require("./src/utilities");
+const { toMili, toMinutes, getRandomPositions } = require("./utilities");
 
 //------VARIABLES---------
 let timeMatrix = [];
@@ -9,24 +9,6 @@ let pois;
 let lunch_start;
 let lunch_end;
 
-function initPopulation(totalPOIS, size) {
-  population = [];
-  const total = totalPOIS - 1;
-
-  for (let i = 0; i < size; i++) {
-    const route = [0, ...getRandomPositions(total, 1, total)];
-    population[i] = {
-      route,
-      fitness: getFitness(route)
-    };
-  }
-  // init best individual
-  const route = Array.from(Array(totalPOIS).keys());
-  bestIndividual = {
-    route: route,
-    fitness: getFitness(route)
-  };
-}
 
 function selection(parentsSize) {
   //select individuals to crossover
@@ -40,89 +22,6 @@ function selection(parentsSize) {
     population.slice(population.length - (best + 1), population.length - 1)
   );
   // return population.slice(population.length-(parentsSize+1),population.length-1);
-}
-
-function getFitness(individual) {
-  //calculate fitness value of any individual
-  let duration = timeMatrix[0][individual[1]].duration;
-  let total = duration + pois[individual[individual.length - 1]].expected_time;
-  const hours = new Date(date);
-
-  for (let i = 1; i < individual.length - 1; i++) {
-    duration = timeMatrix[individual[i]][individual[i + 1]].duration;
-    let expected_time = parseFloat(pois[individual[i]].expected_time);
-    //get penalties
-    let penalties = getPenalties(hours, pois[individual[i]]);
-    setTime(hours, expected_time);
-    //add time duration to arrive to the next poi
-    setTime(hours, duration);
-
-    //lunch time invaded
-    if (hours.getTime() >= lunch_start && hours.getTime() < lunch_end) {
-      setTime(hours, 60);
-      total += toMinutes(lunch_end - hours.getTime());
-    }
-
-    //add total
-    total += expected_time + duration + penalties;
-  }
-
-  return 480 - total;
-
-  function setTime(date, duration) {
-    date.setTime(date.getTime() + toMili(duration));
-  }
-
-  function getPenalties(date, poi) {
-    const time = date.getTime();
-    let open;
-    let close;
-    try {
-      //open
-      open = poi.opening_hours.periods[date.getDay()].open.split("");
-      open = new Date(
-        `${date
-          .toDateString()
-          .split(" ")
-          .splice(1, 3)
-          .join(" ")} ${open[0]}${open[1]}:${open[2]}${open[3]}:00`
-      );
-      open = open.getTime();
-      //close
-      close = poi.opening_hours.periods[date.getDay()].close.split("");
-      close = new Date(
-        date
-          .toDateString()
-          .split(" ")
-          .splice(1, 3)
-          .join(" ") + ` ${close[0]}${close[1]}:${close[2]}${close[3]}:00`
-      );
-      close = close.getTime();
-    } catch (err) {
-      //open
-      open = new Date(
-        `${date
-          .toDateString()
-          .split(" ")
-          .splice(1, 3)
-          .join(" ")} 10:00:00`
-      );
-      open = open.getTime();
-      //close
-      close = new Date(
-        `${date
-          .toDateString()
-          .split(" ")
-          .splice(1, 3)
-          .join(" ")} 17:00:00`
-      );
-      close = close.getTime();
-    }
-    if (!(time >= open && time < close)) {
-      return time < open ? toMinutes(open - time) : toMinutes(time - close);
-    }
-    return 0;
-  }
 }
 
 function sort() {
@@ -327,8 +226,38 @@ function buildSchedule(individual) {
   }
 }
 
-module.exports = {
-  evolve: parameters => {
+class GeneticAlgorithm {
+  constructor(parameters){
+    this.pois = parameters.pois;
+    this.timeMatrix = parameters.timeMatrix;
+    this.date = parameters.date;
+    this.lunch_start = parameters.lunch_start;
+    this.lunch_end = parameters.lunch_end;
+    this.initPopulation(parameters.sizePopulation);
+
+  }
+
+  initPopulation(size) {
+    this.population = [];
+    const total = this.pois.length - 1;
+
+    for (let i = 0; i < size; i++) {
+      const route = [0, ...getRandomPositions(total, 1, total)];
+      this.population[i] = {
+        route,
+        fitness: this.getFitness(route)
+      };
+    }
+
+    // init best individual
+    const first_route = Array.from(this.pois.keys());
+    this.bestIndividual = {
+      route: first_route,
+      fitness: this.getFitness(first_route)
+    };
+  }
+
+  evolve() {
     const crossover_probability = 1 / 3;
     const total = Math.ceil(parameters.sizePopulation * crossover_probability);
     const parentsSize = total % 2 === 0 ? total : total + 1;
@@ -349,4 +278,101 @@ module.exports = {
 
     return buildSchedule(bestIndividual.route);
   }
-};
+
+  getFitness(individual) {
+    //calculate fitness value of any individual
+    let duration = this.timeMatrix[0][individual[1]].duration;
+    let total = duration + this.pois[individual[individual.length - 1]].expected_time;
+    const hours = new Date(this.date);
+
+    for (let i = 1; i < individual.length - 1; i++) {
+      duration = this.timeMatrix[individual[i]][individual[i + 1]].duration;
+      let expected_time = parseFloat(this.pois[individual[i]].expected_time);
+      //get penalties
+      let penalties = calculatePenalties(hours, this.pois[individual[i]]);
+      setTime(hours, expected_time);
+      //add time duration to arrive to the next poi
+      setTime(hours, duration);
+
+      //lunch time invaded
+      if (hours.getTime() >= lunch_start && hours.getTime() < lunch_end) {
+        setTime(hours, 60);
+        total += toMinutes(lunch_end - hours.getTime());
+      }
+
+      //add total
+      total += expected_time + duration + penalties;
+    }
+
+    // TODO change this 480
+    return 480 - total;
+
+    function setTime(date, duration) {
+      date.setTime(date.getTime() + toMili(duration));
+    }
+
+    function calculatePenalties(date, poi) {
+      const time = date.getTime();
+      let open;
+      let close;
+      try {
+        //open
+        open = poi.opening_hours.periods[date.getDay()].open.split("");
+        open = new Date(
+            `${date
+                .toDateString()
+                .split(" ")
+                .splice(1, 3)
+                .join(" ")} ${open[0]}${open[1]}:${open[2]}${open[3]}:00`
+        );
+        open = open.getTime();
+        //close
+        close = poi.opening_hours.periods[date.getDay()].close.split("");
+        close = new Date(
+            date
+                .toDateString()
+                .split(" ")
+                .splice(1, 3)
+                .join(" ") + ` ${close[0]}${close[1]}:${close[2]}${close[3]}:00`
+        );
+        close = close.getTime();
+      } catch (err) {
+        //open
+        open = new Date(
+            `${date
+                .toDateString()
+                .split(" ")
+                .splice(1, 3)
+                .join(" ")} 10:00:00`
+        );
+        open = open.getTime();
+        //close
+        close = new Date(
+            `${date
+                .toDateString()
+                .split(" ")
+                .splice(1, 3)
+                .join(" ")} 17:00:00`
+        );
+        close = close.getTime();
+      }
+      if (!(time >= open && time < close)) {
+        return time < open ? toMinutes(open - time) : toMinutes(time - close);
+      }
+      return 0;
+    }
+  }
+
+  _createDate(date, hour) {
+    return new Date(
+        `${date
+            .toDateString()
+            .split(" ")
+            .splice(1, 3)
+            .join(" ")} ${hour}:00`
+    );
+  }
+
+}
+
+module.exports.GeneticAlgorithm = GeneticAlgorithm;

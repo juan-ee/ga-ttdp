@@ -20,6 +20,7 @@ describe("Utilities Tests", () => {
         const expected_elements = [1,2,3,4,5];
         const array = getRandomPositions(picked, start, max);
 
+        expect(array.length).to.be.eq(picked);
         expected_elements.forEach((expected_element)=>expect(array.includes(expected_element)).to.be.true);
         done();
     });
@@ -29,6 +30,7 @@ describe("Utilities Tests", () => {
         const expected_elements = [0,1,2,3,4,5];
         const array = getRandomPositions(picked, start, max);
 
+        expect(array.length).to.be.eq(picked);
         expected_elements.forEach((expected_element)=>expect(array.includes(expected_element)).to.be.true);
 
         done();
@@ -39,7 +41,6 @@ describe("Utilities Tests", () => {
         const expected_elements = [0,1,2,3,4,5,6,7,8,9];
         const array = getRandomPositions(picked, start, max);
 
-        console.log(array);
         expect(array.length).to.be.eq(picked);
         array.forEach((elem)=>expect(expected_elements.includes(elem)).to.be.true);
 
