@@ -9,18 +9,20 @@ const shuffle = require('shuffle-array');
  */
 function getRandomPositions(pickedNumbers, startNumber, maxNumber) {
     const random_numbers = Array.from(Array(maxNumber), (_,x) => x+startNumber);
-    return shuffle.pick(random_numbers, { picks: pickedNumbers });
-}
 
-function toMili(minutes) {
-    return minutes * 60000;
-}
+    const result = shuffle.pick(random_numbers, { picks: pickedNumbers });
 
-function toMinutes(mili) {
-    return mili / 60000;
-}
+    switch (pickedNumbers) {
+        case 0:
+            return [];
+        case 1:
+            return [result];
+        default:
+            return result;
+    }
 
+}
 
 module.exports = {
-    getRandomPositions, toMili, toMinutes
+    getRandomPositions,
 };

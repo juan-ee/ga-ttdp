@@ -8,6 +8,7 @@
   },
   "author": "Juan Erazo",
   "license": "ISC",
+  "license": "ISC",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vengatus/ga-tsp.git"
@@ -22,6 +23,7 @@
     "prettier": "1.15.3"
   },
   "dependencies": {
+    "moment": "2.23.0",
     "shuffle-array": "^1.0.1"
   }
 }
