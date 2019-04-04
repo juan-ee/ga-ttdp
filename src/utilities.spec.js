@@ -68,8 +68,10 @@ describe("Utilities Tests", () => {
     done();
   });
 
+  it("should return an empty asd", done => {
+    console.log(getRandomPositions(2, 0, 2))
 
-
-
+    done();
+  });
 
 });

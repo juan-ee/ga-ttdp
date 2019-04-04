@@ -1,30 +1,24 @@
 const { getRandomPositions } = require("./utilities");
 const moment = require("moment");
 
-//------VARIABLES---------
-let timeMatrix = [];
-let population = [];
-let bestIndividual = {};
-let date;
-let pois;
-let lunch_start;
-let lunch_end;
-
 class GeneticAlgorithm {
   constructor(parameters) {
     this.travelSchedule = parameters.travelSchedule;
+    this.totalGenerations = parameters.totalGenerations;
     this.travelDate = parameters.travelDate;
     this.pois = parameters.pois;
     this.timeMatrix = parameters.timeMatrix;
     this.crossOverProbability = parameters.crossOverProbability;
+    this.mutationProbability = parameters.mutationProbability;
     this.travelDate = this._buildDate(this.travelSchedule.start);
     this.availableTime = this._buildDate(this.travelSchedule.end).diff(
       this.travelDate,
       "minutes"
     );
-    this.lunchTimeStart = this._buildDate(parameters.lunchTime.start);
-    this.lunchTimeEnd = this._buildDate(parameters.lunchTime.end);
-    this.hadLunch = false;
+    this.lunchTime = {
+      start: this._buildDate(parameters.lunchTime.start),
+      end: this._buildDate(parameters.lunchTime.end)
+    };
     this.initPopulation(parameters.sizePopulation);
     this.sort();
   }
@@ -35,18 +29,12 @@ class GeneticAlgorithm {
 
     for (let i = 0; i < size; i++) {
       const route = [0, ...getRandomPositions(total, 1, total)];
-      this.population[i] = {
-        route,
-        fitness: this._getFitness(route)
-      };
+      this.population[i] = this._createChromosome(route);
     }
 
     // init best individual
     const first_route = Array.from(this.pois.keys());
-    this.bestIndividual = {
-      route: first_route,
-      fitness: this._getFitness(first_route)
-    };
+    this.bestIndividual = this._createChromosome(first_route);
   }
 
   sort() {
@@ -75,169 +63,75 @@ class GeneticAlgorithm {
 
   crossover(parents) {
     const newPopulation = [];
-    const usedParents = [];
-    const total = parents.length;
-    while (usedParents.length !== total) {
-      const positions =
-        parents.length === 2
-          ? [0, 1]
-          : getRandomPositions(2, 0, parents.length); //random positions
-      const parent1 = parents[positions[0]],
-        parent2 = parents[positions[1]];
-      usedParents.push(parent1);
-      usedParents.push(parent2);
+    while (newPopulation.length < this.population.length) {
+      const positions = getRandomPositions(2, 0, parents.length); // random positions
+      const parent1 = parents[positions[0]];
+      const parent2 = parents[positions[1]];
 
-      if (positions[0] > positions[1]) {
-        parents.splice(positions[0], 1);
-        parents.splice(positions[1], 1);
-      } else {
-        parents.splice(positions[1], 1);
-        parents.splice(positions[0], 1);
-      }
-
-      const routes = crossoverParents(parent1.route, parent2.route);
-      for (const route of routes)
-        newPopulation.push({
-          route: route,
-          fitness: this._getFitness(route)
-        });
+      for (const route of this._crossoverParents(parent1.route, parent2.route))
+        newPopulation.push(this._createChromosome(route));
     }
-    population = newPopulation.concat(usedParents);
-
-    function crossoverParents(parent1, parent2) {
-      const [even, odd] = getPositionsAndMaps();
-      return crossoverPoints(even).concat(crossoverPoints(odd));
-
-      function crossoverPoints(parameters) {
-        const [positions, maps] = parameters;
-        let childs = [[0], [0]];
-        for (let i = 1; i < parent1.length; i++) {
-          if (positions.includes(i)) {
-            childs[0][i] = parent1[i];
-            childs[1][i] = parent2[i];
-          } else {
-            childs[0][i] =
-              maps[0][parent2[i]] !== undefined
-                ? maps[0][parent2[i]]
-                : parent2[i];
-            childs[1][i] =
-              maps[1][parent1[i]] !== undefined
-                ? maps[1][parent1[i]]
-                : parent1[i];
-          }
-        }
-        return childs;
-      }
-      function getPositionsAndMaps() {
-        //return the positions of chromosomes and points to be mapped
-        const evenPositions = [],
-          oddPositions = [];
-        const evenPoints = [[], []],
-          oddPoints = [[], []];
-        for (let i = 1; i <= parent1.length - 1; i += 2) {
-          //even
-          evenPoints[0].push(parent1[i]);
-          evenPoints[1].push(parent2[i]);
-          evenPositions.push(i);
-          //odd
-          oddPoints[0].push(parent1[i + 1]);
-          oddPoints[1].push(parent2[i + 1]);
-          oddPositions.push(i + 1);
-        }
-        const last = oddPoints[0].length - 1;
-        if (oddPoints[0][last] === undefined) {
-          oddPoints[0].splice(last, 1);
-          oddPoints[1].splice(last, 1);
-          oddPositions.splice(last, 1);
-        }
-        return [
-          [evenPositions, getMaps(evenPoints)],
-          [oddPositions, getMaps(oddPoints)]
-        ];
-      }
-      function getMaps(points) {
-        //return the points to be mapped
-        const [ar1, ar2] = points;
-        for (let i = 0; i < ar1.length; ++i) {
-          const index = ar2.indexOf(ar1[i]);
-          if (index !== -1) {
-            ar2[index] = ar2[i];
-            ar1.splice(i, 1);
-            ar2.splice(i, 1);
-            i--;
-          }
-        }
-        const m1 = {},
-          m2 = {};
-        for (const i in ar1) {
-          m1[ar1[i]] = ar2[i];
-          m2[ar2[i]] = ar1[i];
-        }
-        return [m1, m2];
-      }
-    }
+    this.population = newPopulation;
   }
 
-  mutation(mutation_probability) {
-    function mutate(individual) {
-      const route = individual.route;
-      const positions = getRandomPositions(
-        Math.floor((route.length - 1) / 2),
-        1,
-        route.length - 1
-      );
-      for (let p = 0; p < positions.length - 1; p += 2) {
-        const aux = route[positions[p]];
-        route[positions[p]] = route[positions[p + 1]];
-        route[positions[p + 1]] = aux;
-      }
-      individual.fitness = getFitness(route);
-    }
-
-    population.forEach(individual => {
-      if (Math.random() < mutation_probability) {
-        mutate(individual);
+  mutation() {
+    this.population.forEach(individual => {
+      if (Math.random() < this.mutationProbability) {
+        this._mutate(individual);
       }
     });
   }
 
   evolve() {
-    timeMatrix = parameters.timeMatrix;
-    date = parameters.travelDate;
-    lunch_start = date.getTime() + 3 * 3600 * 1000;
-    lunch_end = lunch_start + 3600 * 1000;
-
-    pois = parameters.pois;
-    //---EVOLVE---
-    for (let i = 0; i < parameters.totalGenerations; i++) {
-      crossoverAllParents(this.selection());
-      mutation(parameters.mutation_rate);
+    for (let i = 0; i < this.totalGenerations; i++) {
+      this.crossover(this.selection());
+      this.mutation();
       this.sort();
     }
 
-    return buildSchedule(bestIndividual.route);
+    return this._buildItinerary(this.bestIndividual);
+  }
+
+  _mutate(individual) {
+    const route = individual.route;
+    const positions = getRandomPositions(
+      Math.floor((route.length - 1) / 2),
+      1,
+      route.length - 1
+    );
+    for (let p = 0; p < positions.length - 1; p += 2) {
+      const aux = route[positions[p]];
+      route[positions[p]] = route[positions[p + 1]];
+      route[positions[p + 1]] = aux;
+    }
+    individual.lunchTime = null;
+    individual.fitness = this._getFitness(individual);
   }
 
   _getFitness(individual) {
     //calculate fitness value of any individual
-    let travel_time = this.timeMatrix[0][individual[1]].duration;
-    let total =
-      travel_time + this.pois[individual[individual.length - 1]].expected_time;
+    const route = individual.route;
+    let travel_time = this.timeMatrix[0][route[1]].duration;
+    let total = travel_time + this.pois[route[route.length - 1]].expected_time;
     const day_schedule = moment(this.travelDate);
 
-    for (let i = 1; i < individual.length - 1; i++) {
+    for (let i = 1; i < route.length - 1; i++) {
       // time duration to arrive to the next poi
-      travel_time = this.timeMatrix[individual[i]][individual[i + 1]].duration;
+      travel_time = this.timeMatrix[route[i]][route[i + 1]].duration;
       // expected time to visit POI
-      const expected_time = Number(this.pois[individual[i]].expected_time);
+      const expected_time = Number(this.pois[route[i]].expected_time);
       //get penalties
       const penalties = this._calculatePenalties(
         day_schedule,
-        this.pois[individual[i]],
-        this.timeMatrix[individual[i]][individual[i - 1]].duration // Spent time to arrive to the current POI
+        this.pois[route[i]],
+        this.timeMatrix[route[i]][route[i - 1]].duration // Spent time to arrive to the current POI
       );
-      const spent1 = this._addSpentTime(day_schedule, expected_time);
-      const spent2 = this._addSpentTime(day_schedule, travel_time);
+      const spent1 = this._addSpentTime(
+        individual,
+        day_schedule,
+        expected_time
+      );
+      const spent2 = this._addSpentTime(individual, day_schedule, travel_time);
 
       total += spent1 + spent2 + expected_time + travel_time + penalties;
     }
@@ -245,40 +139,43 @@ class GeneticAlgorithm {
     return Math.abs(this.availableTime - total);
   }
 
-  _addSpentTime(currentTime, timeToSpend) {
+  _addSpentTime(individual, currentTime, timeToSpend) {
     let lunch_time = 0;
 
-    if (this.hadLunch) currentTime.add(timeToSpend, "m");
+    if (individual.lunchTime !== null) currentTime.add(timeToSpend, "m");
     else {
       const next_stop = currentTime.clone();
       next_stop.add(timeToSpend, "m");
 
-      if (this.lunchTimeStart.isBetween(currentTime, next_stop, "m", "[]"))
-        lunch_time = this._haveLunch(currentTime, next_stop);
+      if (this.lunchTime.start.isBetween(currentTime, next_stop, "m", "[]"))
+        lunch_time = this._haveLunch(individual, currentTime, next_stop);
       else currentTime.add(timeToSpend, "m");
     }
 
     return lunch_time;
   }
 
-  _haveLunch(currentDate, nextDate) {
+  _haveLunch(individual, currentDate, nextDate) {
     let invaded_time;
     const time_window = nextDate.diff(currentDate, "m"); // spent time between 2 events (visiting a POI or travelling to the next POI)
-    const lunch_time = this.lunchTimeEnd.diff(this.lunchTimeStart, "m");
-    const diff1 = Math.abs(this.lunchTimeStart.diff(currentDate, "m"));
-    const diff2 = Math.abs(this.lunchTimeStart.diff(nextDate, "m"));
+    const lunch_time = this.lunchTime.end.diff(this.lunchTime.start, "m");
+    const diff1 = Math.abs(this.lunchTime.start.diff(currentDate, "m"));
+    const diff2 = Math.abs(this.lunchTime.start.diff(nextDate, "m"));
 
+    individual.lunchTime = {};
     if (diff1 < diff2) {
+      individual.lunchTime.start = currentDate.clone();
       currentDate.add(lunch_time, "m");
+      individual.lunchTime.end = currentDate.clone();
       currentDate.add(time_window, "m");
       invaded_time = diff1;
     } else {
       currentDate.add(time_window, "m");
+      individual.lunchTime.start = currentDate.clone();
       currentDate.add(lunch_time, "m");
+      individual.lunchTime.end = currentDate.clone();
       invaded_time = diff2;
     }
-
-    this.hadLunch = true;
 
     return lunch_time + invaded_time;
   }
@@ -312,70 +209,192 @@ class GeneticAlgorithm {
       .seconds(0);
   }
 
-  _buildSchedule(individual) {
-    let duration = timeMatrix[0][individual[1]].duration;
-    const schedule = [];
-    const hours = new Date(date);
+  _crossoverParents(parent1, parent2) {
+    const [even, odd] = this._getPositionsAndMaps(parent1, parent2);
+    return [...pmx(even), ...pmx(odd)];
 
-    const time_ini = new Date(date);
-    time_ini.setTime(date.getTime() - duration * 60 * 1000);
+    function pmx(parameters) {
+      const [positions, maps] = parameters;
+      let children = [[0], [0]];
+      for (let i = 1; i < parent1.length; i++) {
+        if (positions.includes(i)) {
+          children[0][i] = parent1[i];
+          children[1][i] = parent2[i];
+        } else {
+          children[0][i] =
+            maps[0][parent2[i]] !== undefined
+              ? maps[0][parent2[i]]
+              : parent2[i];
+          children[1][i] =
+            maps[1][parent1[i]] !== undefined
+              ? maps[1][parent1[i]]
+              : parent1[i];
+        }
+      }
+      return children;
+    }
+  }
 
-    //location User
-    schedule.push({ poi: pois[0] });
-    //---ROUTE TO FIRST POI---
-    schedule.push({
-      route: timeMatrix[0][individual[1]].points,
-      departure: time_ini.toTimeString().split(" ")[0],
-      arrival: date.toTimeString().split(" ")[0]
-    });
+  _getPositionsAndMaps(parent1, parent2) {
+    //return the positions of chromosomes and points to be mapped
+    const evenPositions = [],
+      oddPositions = [];
+    const evenPoints = [[], []],
+      oddPoints = [[], []];
 
-    for (let i = 1; i < individual.length - 1; i++) {
-      duration = timeMatrix[individual[i]][individual[i + 1]].duration;
-      const expected_time = parseFloat(pois[individual[i]].expected_time);
+    for (let i = 1; i <= parent1.length - 1; i += 2) {
+      // even
+      evenPoints[0].push(parent1[i]);
+      evenPoints[1].push(parent2[i]);
+      evenPositions.push(i);
+      // odd
+      oddPoints[0].push(parent1[i + 1]);
+      oddPoints[1].push(parent2[i + 1]);
+      oddPositions.push(i + 1);
+    }
 
-      //visit time to POI
-      const visit_time = { poi: pois[individual[i]] };
+    const last = oddPoints[0].length - 1;
 
-      //route to next POI
-      const next = {
-        route: timeMatrix[individual[i]][individual[i + 1]].points
-      };
+    if (oddPoints[0][last] === undefined) {
+      // when the array.length % 2 = 0, the last element will be undefined
+      oddPoints[0].splice(last, 1);
+      oddPoints[1].splice(last, 1);
+      oddPositions.splice(last, 1);
+    }
+    return [
+      [evenPositions, GeneticAlgorithm._getMaps(evenPoints)],
+      [oddPositions, GeneticAlgorithm._getMaps(oddPoints)]
+    ];
+  }
 
-      //POI expected visit time
-      setTime(hours, expected_time, visit_time);
-      schedule.push(visit_time);
-
-      //time to travel to de next POI
-      setTime(hours, duration, next);
-      schedule.push(next);
-
-      //lunch time
-      if (hours.getTime() >= lunch_start && hours.getTime() < lunch_end) {
-        const lunch_time = {
-          lunch: true,
-          location: pois[individual[i + 1]].location
-        };
-        setTime(hours, 60, lunch_time);
-        schedule.push(lunch_time);
+  static _getMaps(points) {
+    //return the points to be mapped
+    const [ar1, ar2] = points;
+    for (let i = 0; i < ar1.length; ++i) {
+      const index = ar2.indexOf(ar1[i]);
+      if (index !== -1) {
+        ar2[index] = ar2[i];
+        ar1.splice(i, 1);
+        ar2.splice(i, 1);
+        i--;
       }
     }
-    const last = { poi: pois[individual[individual.length - 1]] };
-    setTime(hours, pois[individual[individual.length - 1]].expected_time, last);
-    schedule.push(last);
-
-    return schedule;
-
-    function setTime(date, duration, obj) {
-      obj.start = date
-        .toTimeString()
-        .split(":", 2)
-        .join(":");
-      date.setTime(date.getTime() + duration * 60 * 1000);
-      obj.end = date
-        .toTimeString()
-        .split(":", 2)
-        .join(":");
+    const m1 = {},
+      m2 = {};
+    for (const i in ar1) {
+      m1[ar1[i]] = ar2[i];
+      m2[ar2[i]] = ar1[i];
     }
+    return [m1, m2];
+  }
+
+  _buildItinerary(chromosome) {
+    let had_lunch = false;
+    const pois = this.pois;
+    const timeMatrix = this.timeMatrix;
+    const route = chromosome.route;
+    const itinerary = [];
+    const current_time = this.travelDate.clone();
+
+    // From home to the first POI
+    current_time.subtract(this.timeMatrix[0][route[1]].duration, "m");
+
+    // User location
+    itinerary.push({
+      type: "home",
+      ...this.pois[route[0]]
+    });
+
+    let position = 0;
+    let [obj, duration, next_event] = _getEvent("route", position);
+
+    while (position < route.length - 1) {
+      const next_time = current_time.clone();
+      next_time.add(duration, "m");
+
+      if (!had_lunch && chromosome.lunchTime.start.isBefore(next_time)) {
+        const lunch_duration = chromosome.lunchTime.end.diff(chromosome.lunchTime.start, "m");
+
+        itinerary.push({
+          type: "lunch",
+          duration: lunch_duration,
+          schedule: _getSchedule(lunch_duration)
+        });
+        had_lunch = true;
+      }
+
+      itinerary.push({
+        ...obj,
+        schedule: _getSchedule(duration)
+      });
+
+      [obj, duration, next_event] = _getEvent(next_event, position);
+    }
+
+    itinerary.push({
+      ...obj,
+      schedule: _getSchedule(duration)
+    });
+
+    // Last POI
+    [obj, duration] = _getEvent(next_event, position);
+
+    itinerary.push({
+      ...obj,
+      schedule: _getSchedule(duration)
+    });
+
+    return itinerary;
+
+    function _getEvent(currentEvent, i) {
+      if (currentEvent === "poi") {
+        const poi = pois[route[position]];
+
+        return [
+          {
+            type: "poi",
+            ...poi
+          },
+          poi.expected_time,
+          "route"
+        ];
+      }
+
+
+      const next_route = timeMatrix[route[i]][route[i + 1]];
+      position += 1;
+
+      return [
+        {
+          type: "route",
+          ...next_route
+        },
+        next_route.duration,
+        "poi"
+      ];
+    }
+
+    function _getSchedule(duration) {
+      const start = current_time.format("HH:mm");
+
+      current_time.add(duration, "minutes");
+
+      return {
+        start,
+        end: current_time.format("HH:mm")
+      };
+    }
+  }
+
+  _createChromosome(route) {
+    const chromosome = {
+      route,
+      lunchTime: null
+    };
+
+    chromosome.fitness = this._getFitness(chromosome);
+
+    return chromosome;
   }
 }
 

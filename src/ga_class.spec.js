@@ -2,6 +2,7 @@ const { GeneticAlgorithm } = require("./ga_class");
 const {it} = require('mocha');
 const {expect} = require('chai');
 const moment = require('moment');
+const { getRandomPositions } = require("./utilities");
 
 describe("GeneticAlgorithm Tests", () => {
     const YEAR = 2019;
@@ -23,10 +24,11 @@ describe("GeneticAlgorithm Tests", () => {
               start: '1300',
               end: '1400'
             },
-            totalGenerations: 5,
+            totalGenerations: 100,
             mutation_rate: 0.3,
             crossOverProbability: 1/3,
-            sizePopulation: 10
+            mutationProbability: 0.05,
+            sizePopulation: 21
         };
         ga = new GeneticAlgorithm(parameters);
     });
@@ -35,117 +37,204 @@ describe("GeneticAlgorithm Tests", () => {
         ga = null;
     });
 
-    it('should init population and bestIndividual and sort', (done) => {
-        const size = 40;
-        parameters = {...parameters, sizePopulation: size};
-        ga = new GeneticAlgorithm(parameters);
-        const [hours, minutes] = parameters.travelSchedule.start.match(/\d{2}/g).map(x => Number(x));
+    describe("Initialization, selection and fitness",()=> {
+        it('should init population and bestIndividual and sort', (done) => {
+            const size = 40;
+            parameters = {...parameters, sizePopulation: size};
+            ga = new GeneticAlgorithm(parameters);
+            const [hours, minutes] = parameters.travelSchedule.start.match(/\d{2}/g).map(x => Number(x));
 
-        expect(ga.travelDate.hour()).to.be.eq(hours);
-        expect(ga.travelDate.minutes()).to.be.eq(minutes);
-        expect(ga.population).to.have.length(size);
-        expect(ga.bestIndividual.fitness).to.not.be.NaN;
-        expect(ga.population[ga.population.length-1].fitness < ga.population[0].fitness).to.be.eq(true);
-        done();
+            expect(ga.travelDate.hour()).to.be.eq(hours);
+            expect(ga.travelDate.minutes()).to.be.eq(minutes);
+            expect(ga.population).to.have.length(size);
+            expect(ga.bestIndividual.fitness).to.not.be.NaN;
+            expect(ga.population[ga.population.length-1].fitness < ga.population[0].fitness).to.be.eq(true);
+            done();
+        });
+
+        it('should select parents to crossover', (done) => {
+            let expected_size = Math.floor(ga.population.length * parameters.crossOverProbability);
+            expected_size = expected_size % 2 === 0 ? expected_size : expected_size + 1;
+            const selected = ga.selection();
+
+            expect(selected.length).to.be.eq(expected_size);
+            expect(selected[selected.length - 1].fitness <= selected[0].fitness).to.be.eq(true);
+            done();
+        });
+
+        it('should create a moment object, _buildDate', (done) => {
+            const hour = 12 , minutes = 37;
+            const d = ga._buildDate(`${hour}${minutes}`);
+            expect(d.hour()).to.be.eq(hour);
+            expect(d.minutes()).to.be.eq(minutes);
+            done();
+        });
+
+        it('should calculate penalties, return 0', (done) => {
+            const date = moment([YEAR, MONTH, DAY, 11, 35]);
+            const poi = mockPenaltyPoi("1100", "1800");
+            const penalties = ga._calculatePenalties(date,poi,12);
+            expect(penalties).to.be.eq(0);
+            done();
+        });
+
+        it('should calculate penalties, before arriving POI', (done) => {
+            const date = moment([YEAR, MONTH, DAY, 10, 30]);
+            const poi = mockPenaltyPoi("1100", "1800");
+            const penalties = ga._calculatePenalties(date,poi,12);
+            expect(penalties).to.be.eq(30);
+            done();
+        });
+
+        it('should calculate penalties, arriving at closed POI', (done) => {
+            const travel_time = 21;
+            const date = moment([YEAR, MONTH, DAY, 18, 30]);
+            const poi = mockPenaltyPoi("1100", "1800");
+            const penalties = ga._calculatePenalties(date,poi,travel_time);
+            expect(penalties).to.be.eq(travel_time);
+            done();
+        });
+
+        it('should calculate penalties, return 0 with error', (done) => { // TODO: remove this test because it'll be filtered in the server
+            const date = moment([YEAR, MONTH, DAY, 11, 0]);
+            const poi = {};
+            const penalties = ga._calculatePenalties(date,poi,2);
+            expect(penalties).to.be.eq(0);
+            done();
+        });
+
+        it('should add spent time', (done) => {
+            const spent_time = 17;
+            const current_date = ga._buildDate("1400");
+            const date_backup = current_date.clone();
+
+            const invaded_time = ga._addSpentTime(mockChromosome(ga),current_date, spent_time);
+
+            expect(invaded_time).to.be.eq(0);
+            expect(current_date.diff(date_backup,"m")).to.be.eq(spent_time);
+            done();
+        });
+
+        it('should get lunch before spend time', (done) => {
+            const before = 10, after = 25;
+            const current_date = ga._buildDate(parameters.lunchTime.start).subtract(before,"m");
+            const date_backup = current_date.clone();
+            const lunch_time = ga.lunchTime.end.diff(ga.lunchTime.start, "m");
+            const chromosome = mockChromosome(ga);
+
+            chromosome.lunchTime = null;
+
+            const spent_time = ga._addSpentTime(chromosome,current_date, after);
+            expect(spent_time - lunch_time).to.be.eq(before);
+            expect(chromosome.lunchTime).to.not.be.eq(null);
+            expect(current_date.diff(date_backup,"m")).to.be.eq(lunch_time + after);
+            done();
+        });
+
+        it('should get lunch after spend time', (done) => {
+            const before = 10, after = 15;
+            const lunch_time = ga.lunchTime.end.diff(ga.lunchTime.start, "m");
+            const current_date = ga._buildDate(parameters.lunchTime.start).subtract(before,"m");
+            const chromosome = mockChromosome(ga);
+
+            chromosome.lunchTime = null;
+
+            const spent_time = ga._addSpentTime(chromosome,current_date, after);
+
+            expect(spent_time - lunch_time).to.be.eq(after - before);
+            expect(chromosome.lunchTime).to.be.not.eq(null);
+            done();
+        });
     });
 
-    it('should select parents to crossover', (done) => {
-        let expected_size = Math.floor(ga.population.length * parameters.crossOverProbability);
-        expected_size = expected_size % 2 === 0 ? expected_size : expected_size + 1;
-        const selected = ga.selection();
+    describe("Crossover and Mutation",()=>{
+        it('should return points to be mapped in offspring', (done) => {
+            [m1, m2] = GeneticAlgorithm._getMaps([
+                [3, 4, 5, 6],
+                [6, 7, 2, 1]
+            ]);
+            // 3 <-> 6 <-> 1
+            // 7 <-> 4
+            // 2 <-> 5
+            expect(m1[3]).to.be.eq(1);
+            expect(m1[4]).to.be.eq(7);
+            expect(m1[5]).to.be.eq(2);
 
-        expect(selected.length).to.be.eq(expected_size);
-        expect(selected[selected.length - 1].fitness <= selected[0].fitness).to.be.eq(true);
-        done();
+            expect(m2[7]).to.be.eq(4);
+            expect(m2[2]).to.be.eq(5);
+            expect(m2[1]).to.be.eq(3);
+            done();
+        });
+        it('should get positions and maps to crossover parents', (done) => {
+            [r1, r2] = ga._getPositionsAndMaps(
+                [0, 1, 2, 3, 4, 5, 6, 7],
+                [0, 5, 4, 6, 7, 2, 1, 3]
+            );
+
+            expect(JSON.stringify(r1[0])).to.be.eq(JSON.stringify([1, 3, 5, 7]));
+            expect(JSON.stringify(r2[0])).to.be.eq(JSON.stringify([2, 4, 6]));
+            /* EVEN  p1:    1   3   5   7
+                     p2:    5   6   2   3
+               m:   1 <-> 5 <-> 2
+                    7 <-> 3 <-> 6
+            */
+            expect(r1[1][0][1]).to.be.eq(2);
+            expect(r1[1][0][7]).to.be.eq(6);
+            expect(r1[1][1][2]).to.be.eq(1);
+            expect(r1[1][1][6]).to.be.eq(7);
+
+            /* ODD   p1:    2   4   6
+                     p2:    4   7   1
+               m:   2 <-> 4 <-> 7
+                    6 <-> 1
+            */
+            expect(r2[1][0][2]).to.be.eq(7);
+            expect(r2[1][0][6]).to.be.eq(1);
+            expect(r2[1][1][7]).to.be.eq(2);
+            expect(r2[1][1][1]).to.be.eq(6);
+            done();
+        });
+
+        it('should crossover 2 parents', (done) => {
+            const offspring = ga._crossoverParents(
+                [0, 1, 2, 3, 4, 5, 6, 7],
+                [0, 5, 4, 6, 7, 2, 1, 3]
+            );
+
+            expect(offspring).to.have.length(4);
+
+            done();
+        });
+
+        it('should mutate a chromosome', (done) => {
+            const chromosome = mockChromosome(ga);
+            const last_route = [...chromosome.route];
+
+            ga.mutationProbability = 1;
+            ga._mutate(chromosome);
+            expect(JSON.stringify(last_route)).to.not.be.eq(JSON.stringify(chromosome.route));
+            done();
+        });
+
     });
 
-    it('should create a moment object, _buildDate', (done) => {
-        const hour = 12 , minutes = 37;
-        const d = ga._buildDate(`${hour}${minutes}`);
-        expect(d.hour()).to.be.eq(hour);
-        expect(d.minutes()).to.be.eq(minutes);
-        done();
+    describe("Build itinerary",()=>{
+       it("it should create an itinerary", (done) => {
+           const itinerary = ga.evolve();
+
+           expect(itinerary.length).to.be.eq(ga.pois.length * 2);
+           expect(itinerary[0].type).to.be.eq("home");
+           expect(itinerary[1].type).to.be.eq("route");
+           expect(itinerary[itinerary.length - 1].type).to.be.eq("poi");
+           done();
+       });
     });
-    it('should calculate penalties, return 0', (done) => {
-        const date = moment([YEAR, MONTH, DAY, 11, 35]);
-        const poi = mockPenaltyPoi("1100", "1800");
-        const penalties = ga._calculatePenalties(date,poi,12);
-        expect(penalties).to.be.eq(0);
-        done();
-    });
-    it('should calculate penalties, before arriving POI', (done) => {
-        const date = moment([YEAR, MONTH, DAY, 10, 30]);
-        const poi = mockPenaltyPoi("1100", "1800");
-        const penalties = ga._calculatePenalties(date,poi,12);
-        expect(penalties).to.be.eq(30);
-        done();
-    });
-
-    it('should calculate penalties, arriving at closed POI', (done) => {
-        const travel_time = 21;
-        const date = moment([YEAR, MONTH, DAY, 18, 30]);
-        const poi = mockPenaltyPoi("1100", "1800");
-        const penalties = ga._calculatePenalties(date,poi,travel_time);
-        expect(penalties).to.be.eq(travel_time);
-        done();
-    });
-
-    it('should calculate penalties, return 0 with error', (done) => { // TODO: remove this test
-        const date = moment([YEAR, MONTH, DAY, 11, 0]);
-        const poi = {};
-        const penalties = ga._calculatePenalties(date,poi,2);
-        expect(penalties).to.be.eq(0);
-        done();
-    });
-
-
-    it('should add spend time', (done) => {
-        const spent_time = 17;
-        const current_date = ga._buildDate("1400");
-        const date_backup = current_date.clone();
-
-        ga.hadLunch = true;
-        const invaded_time = ga._addSpentTime(current_date, spent_time);
-
-        expect(invaded_time).to.be.eq(0);
-        expect(ga.hadLunch).to.be.eq(true);
-        expect(current_date.diff(date_backup,"m")).to.be.eq(spent_time);
-        done();
-    });
-
-    it('should get lunch before spend time', (done) => {
-        const before = 10, after = 25;
-        const current_date = ga._buildDate(parameters.lunchTime.start);
-        current_date.subtract(before,"m");
-        const date_backup = current_date.clone();
-        const lunch_time = ga.lunchTimeEnd.diff(ga.lunchTimeStart, "m");
-
-        ga.hadLunch = false;
-        const invaded_time = ga._addSpentTime(current_date, after);
-
-        expect(invaded_time - lunch_time).to.be.eq(before);
-        expect(ga.hadLunch).to.be.eq(true);
-        expect(current_date.diff(date_backup,"m")).to.be.eq(lunch_time + after);
-        done();
-    });
-
-    it('should get lunch after spend time', (done) => {
-        const before = 10, after = 15;
-        const lunch_time = ga.lunchTimeEnd.diff(ga.lunchTimeStart, "m");
-        const current_date = ga._buildDate(parameters.lunchTime.start);
-        current_date.subtract(before,"m");
-
-
-        ga.hadLunch = false;
-        const invaded_time = ga._addSpentTime(current_date, after);
-
-        expect(invaded_time - lunch_time).to.be.eq(after - before);
-        expect(ga.hadLunch).to.be.eq(true);
-        done();
-    });
-
 
 });
+
+function mockChromosome(ga) {
+    return ga._createChromosome([0,...getRandomPositions(ga.pois.length-1,1,ga.pois.length-1)]);
+}
 
 function mockPenaltyPoi(open, close) {
     return {opening_hours:{periods:[{open, close}]}}
