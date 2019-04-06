@@ -375,7 +375,7 @@ const pois = [
 
 const ga = new GeneticAlgorithm({
       pois,
-      sizePopulation: 50,
+      populationSize: 50,
       timeMatrix: time_matrix,
       date: new Date(),
       totalGenerations: 5,

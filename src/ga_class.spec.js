@@ -25,10 +25,9 @@ describe("GeneticAlgorithm Tests", () => {
               end: '1400'
             },
             totalGenerations: 100,
-            mutation_rate: 0.3,
             crossOverProbability: 1/3,
             mutationProbability: 0.05,
-            sizePopulation: 21
+            populationSize: 21
         };
         ga = new GeneticAlgorithm(parameters);
     });

@@ -139,7 +139,7 @@ for (let i=0; i<time_matrix.length; i++){
 
 console.log(evolve({
   pois,
-  sizePopulation: 50,
+  populationSize: 50,
   timeMatrix: time_matrix,
   date: new Date(),
   totalGenerations: 5,

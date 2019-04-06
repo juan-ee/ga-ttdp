@@ -19,7 +19,7 @@ class GeneticAlgorithm {
       start: this._buildDate(parameters.lunchTime.start),
       end: this._buildDate(parameters.lunchTime.end)
     };
-    this.initPopulation(parameters.sizePopulation);
+    this.initPopulation(parameters.populationSize);
     this.sort();
   }
 
@@ -29,6 +29,7 @@ class GeneticAlgorithm {
 
     for (let i = 0; i < size; i++) {
       const route = [0, ...getRandomPositions(total, 1, total)];
+
       this.population[i] = this._createChromosome(route);
     }
 
