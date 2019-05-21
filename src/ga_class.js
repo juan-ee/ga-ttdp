@@ -1,4 +1,5 @@
 const { getRandomPositions } = require("./utilities");
+const { get } = require("lodash");
 const moment = require("moment");
 
 class GeneticAlgorithm {
@@ -313,8 +314,18 @@ class GeneticAlgorithm {
       const next_time = current_time.clone();
       next_time.add(duration, "m");
 
-      if (!had_lunch && chromosome.lunchTime.start.isBefore(next_time)) {
-        const lunch_duration = chromosome.lunchTime.end.diff(chromosome.lunchTime.start, "m");
+      if (
+        !had_lunch &&
+        get(
+          chromosome,
+          "lunchTime.start",
+          this.travelDate.clone().add(1, "d")
+        ).isBefore(next_time)
+      ) {
+        const lunch_duration = chromosome.lunchTime.end.diff(
+          chromosome.lunchTime.start,
+          "m"
+        );
 
         itinerary.push({
           type: "lunch",
@@ -360,7 +371,6 @@ class GeneticAlgorithm {
           "route"
         ];
       }
-
 
       const next_route = timeMatrix[route[i]][route[i + 1]];
       position += 1;

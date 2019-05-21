@@ -227,6 +227,20 @@ describe("GeneticAlgorithm Tests", () => {
            expect(itinerary[itinerary.length - 1].type).to.be.eq("poi");
            done();
        });
+       it("it should create an itinerary, without lunch", (done) => {
+           ga.evolve();
+           ga.bestIndividual.lunchTime = null;
+
+           const itinerary = ga._buildItinerary(ga.bestIndividual);
+
+           expect(itinerary.length).to.be.eq(ga.pois.length * 2 - 1);
+           expect(itinerary[0].type).to.be.eq("home");
+           expect(itinerary[1].type).to.be.eq("route");
+           expect(itinerary[itinerary.length - 1].type).to.be.eq("poi");
+           console.log(JSON.stringify(itinerary));
+           done();
+       });
+
     });
 
 });
